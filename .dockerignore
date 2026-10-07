@@ -8,3 +8,4 @@ tests
 *.pyc
 .DS_Store
 .env
+gha-creds-*.json

@@ -1,14 +1,37 @@
-name: CI - Test and Build
+name: CI/CD - Build and Deploy to GKE
 
 on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
+    paths:
+      - "app/**"
+      - "tests/**"
+      - "k8s/**"
+      - "Dockerfile"
+      - "requirements.txt"
+      - ".github/workflows/ci.yml"
+
+    pull_request:
+      branches:
+        - main
+      paths:
+        - "app/**"
+        - "tests/**"
+        - "k8s/**"
+        - "Dockerfile"
+        - "requirements.txt"
+
+env:
+  PROJECT_ID: project-c53c4628-9573-4d75-bf6
+  REGION: asia-south1
+  GKE_CLUSTER: build-info-gke
+  GKE_ZONE: asia-south1-a
+  GAR_REPOSITORY: build-info
+  IMAGE_NAME: build-info-api
 
 jobs:
+
   test:
     name: Run Python Tests
     runs-on: ubuntu-latest
@@ -31,15 +54,68 @@ jobs:
         run: |
           python -m pytest -v
 
-  docker-build:
-    name: Build Docker Image
+  build-and-deploy:
+    name: Build, Push and Deploy
     runs-on: ubuntu-latest
     needs: test
+
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout source code
         uses: actions/checkout@v7
 
-      - name: Build Docker image
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: projects/25405505387/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider
+          service_account: github-actions-deployer@project-c53c4628-9573-4d75-bf6.iam.gserviceaccount.com
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Configure Docker for Artifact Registry
         run: |
-          docker build -t build-info-api:${{ github.sha }} .
+          gcloud auth configure-docker \
+            ${{ env.REGION }}-docker.pkg.dev \
+            --quiet
+
+      - name: Build and push Docker image
+        env:
+          IMAGE_URI: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        run: |
+          docker build -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+
+      - name: Get GKE credentials
+        run: |
+          gcloud container clusters get-credentials \
+            "${{ env.GKE_CLUSTER }}" \
+            --zone "${{ env.GKE_ZONE }}" \
+            --project "${{ env.PROJECT_ID }}"
+
+      - name: Deploy to GKE
+        env:
+          IMAGE_URI: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        run: |
+          sed "s|IMAGE_PLACEHOLDER|${IMAGE_URI}|g" k8s/deployment.yaml | kubectl apply -f -
+
+          kubectl apply -f k8s/service.yaml
+
+          kubectl set env deployment/build-info-api \
+            BUILD_NUMBER="${{ github.run_number }}" \
+            GIT_COMMIT="${{ github.sha }}" \
+            ENVIRONMENT="demo"
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/build-info-api --timeout=180s
+          kubectl get pods -o wide
+          kubectl get service build-info-service
