@@ -20,3 +20,8 @@ variable "cluster_name" {
   type        = string
   default     = "build-info-gke"
 }
+
+variable "github_repository" {
+  description = "GitHub repository allowed to authenticate to GCP using Workload Identity Federation"
+  type        = string
+}
