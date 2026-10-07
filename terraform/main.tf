@@ -4,7 +4,9 @@ locals {
     "container.googleapis.com",
     "artifactregistry.googleapis.com",
     "iamcredentials.googleapis.com",
-    "sts.googleapis.com"
+    "sts.googleapis.com",
+    "logging.googleapis.com",
+    "monitoring.googleapis.com"
   ])
 }
 

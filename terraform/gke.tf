@@ -10,6 +10,9 @@ resource "google_container_cluster" "primary" {
 
   deletion_protection = false
 
+  logging_service    = "logging.googleapis.com/kubernetes"
+  monitoring_service = "monitoring.googleapis.com/kubernetes"
+
   ip_allocation_policy {
     cluster_secondary_range_name  = "gke-pods"
     services_secondary_range_name = "gke-services"
