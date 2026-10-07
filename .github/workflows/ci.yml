@@ -81,6 +81,10 @@ jobs:
         with:
           project_id: ${{ env.PROJECT_ID }}
 
+      - name: Install GKE auth plugin
+        run: |
+          gcloud components install gke-gcloud-auth-plugin --quiet
+
       - name: Configure Docker for Artifact Registry
         run: |
           gcloud auth configure-docker \
